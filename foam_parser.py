@@ -25,7 +25,6 @@ def check_password():
 
 check_password()
 
-# === Define extraction function (your logic) ===
 def extract_samples_complete_fixed(df):
     samples = []
     formulations = {}
@@ -52,72 +51,36 @@ def extract_samples_complete_fixed(df):
             "SampleID": re.search(r"\((.*?)\)", text).group(1).strip() if re.search(r"\((.*?)\)", text) else None
         }
         seen_keys_lower = set()
-        
         for p in re.split(r'[,-]', text):
             p = p.strip()
-
             ppm_match = re.match(r"(\d+\.?\d*)\s*ppm\s*(.*)", p, re.IGNORECASE)
             if ppm_match:
                 val, chem = ppm_match.groups()
-                chem = re.sub(r"\(.*?\)", "", chem).strip() 
+                chem = re.sub(r"\(.*?\)", "", chem).strip()
                 chem_key = f"{chem} (ppm)"
                 if chem_key.lower() not in seen_keys_lower:
                     data[chem_key] = float(val)
                     seen_keys_lower.add(chem_key.lower())
                 continue
-
             percent_match = re.match(r"(\d+\.?\d*)%\s*(.*)", p, re.IGNORECASE)
             if percent_match:
                 val, chem = percent_match.groups()
-                chem = re.sub(r"\(.*?\)", "", chem).strip() 
+                chem = re.sub(r"\(.*?\)", "", chem).strip()
                 chem_key = f"{chem} (%)"
                 if chem_key.lower() not in seen_keys_lower:
                     data[chem_key] = float(val)
                     seen_keys_lower.add(chem_key.lower())
-
         return data
 
     while row < df.shape[0]:
         cell = str(df.iat[row, 0]).strip()
 
-        if re.match(r"Day\s*\d+", cell, re.IGNORECASE):
-            row_data = {"SampleID": last_formulation["SampleID"]} if last_formulation else {}
-            row_data["Dilution"] = last_dilution
-            row_data["Day"] = cell.strip()
-            stars = ["*" for i in range(column_map.get("Foam Texture", 0) + 1, df.shape[1]) if "*" in str(df.iat[row, i])]
-            row_data["Baseline"] = ", ".join(stars) if stars else None
-            for offset, label in enumerate(["Date", "Foam (cc)", "Foam Texture", "Liquid Amount", "Zeta", "Conductivity", "Size", "PI"]):
-                col_idx = column_map.get(label)
-                if label == "Date" and col_idx is None:
-                    col_idx = 1  # Assume Date is the column after Day
-                val = str(df.iat[row, col_idx]).strip() if col_idx is not None and col_idx < df.shape[1] else None
-                if not val or val.lower() == "nan":
-                    row_data[label] = None
-                else:
-                    if label in ["Foam (cc)", "Liquid Amount", "Zeta", "Conductivity", "Size", "PI"]:
-                        num = re.search(r"[-+]?\d+\.?\d*", val)
-                        row_data[label] = float(num.group()) if num else None
-                    else:
-                        row_data[label] = val
-
-            if row + 1 < df.shape[0]:
-                next_row = df.iloc[row + 1]
-                non_empty = next_row.dropna()
-                if len(non_empty) == 1 and column_map.get("Foam Texture") in non_empty.index:
-                    extra_texture = str(non_empty.values[0]).strip()
-                    if extra_texture:
-                        existing = row_data.get("Foam Texture", "")
-                        row_data["Foam Texture"] = f"{existing}, {extra_texture}".strip(", ")
-                    row += 1
-
-            current_dilution_rows.append(row_data)
-            row += 1
-            continue
-
-        if re.match(r"\d+%.*", cell):
+        # --- Formulation row detection ---
+        if any(sym in cell.lower() for sym in ["%", "ppm"]) and "(" in cell:
             flush_current_dilution()
             formulation_text = cell.lower()
 
+            # Detect stability
             s8, s4 = np.nan, np.nan
             if "unstable concentrate" in formulation_text:
                 s8 = False
@@ -150,6 +113,62 @@ def extract_samples_complete_fixed(df):
                 last_formulation["SampleID"] = fallback_id
             formulations[last_formulation["SampleID"]] = last_formulation
 
+            # 🔍 Check next row for dilution
+            next_row_text = ",".join(df.iloc[row + 1].fillna("").astype(str)).lower() if row + 1 < df.shape[0] else ""
+            if not re.search(r"\d+\s*x", next_row_text):
+                # If no dilution row follows, treat it as a single-row sample
+                samples.append({
+                    "SampleID": last_formulation["SampleID"],
+                    "Dilution": None,
+                    "Day": None,
+                    "Foam (cc)": None,
+                    "Foam Texture": None,
+                    "Water": None,
+                    "Zeta": None,
+                    "Conductivity": None,
+                    "Size": None,
+                    "PI": None,
+                    "Baseline": None,
+                    "Date": None,
+                    "Stable at 8C": s8,
+                    "Stable at 4C": s4,
+                    "Tube Volume": None
+                })
+
+            row += 1
+            continue
+
+        if re.match(r"Day\s*\d+", cell, re.IGNORECASE):
+            row_data = {"SampleID": last_formulation["SampleID"]} if last_formulation else {}
+            row_data["Dilution"] = last_dilution
+            row_data["Day"] = cell.strip()
+            stars = ["*" for i in range(column_map.get("Foam Texture", 0) + 1, df.shape[1]) if "*" in str(df.iat[row, i])]
+            row_data["Baseline"] = ", ".join(stars) if stars else None
+            for offset, label in enumerate(["Date", "Foam (cc)", "Foam Texture", "Water", "Zeta", "Conductivity", "Size", "PI"]):
+                col_idx = column_map.get(label)
+                if label == "Date" and col_idx is None:
+                    col_idx = 1
+                val = str(df.iat[row, col_idx]).strip() if col_idx is not None and col_idx < df.shape[1] else None
+                if not val or val.lower() == "nan":
+                    row_data[label] = None
+                else:
+                    if label in ["Foam (cc)", "Water", "Zeta", "Conductivity", "Size", "PI"]:
+                        num = re.search(r"[-+]?\d+\.?\d*", val)
+                        row_data[label] = float(num.group()) if num else None
+                    else:
+                        row_data[label] = val
+
+            if row + 1 < df.shape[0]:
+                next_row = df.iloc[row + 1]
+                non_empty = next_row.dropna()
+                if len(non_empty) == 1 and column_map.get("Foam Texture") in non_empty.index:
+                    extra_texture = str(non_empty.values[0]).strip()
+                    if extra_texture:
+                        existing = row_data.get("Foam Texture", "")
+                        row_data["Foam Texture"] = f"{existing}, {extra_texture}".strip(", ")
+                    row += 1
+
+            current_dilution_rows.append(row_data)
             row += 1
             continue
 
