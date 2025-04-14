@@ -228,6 +228,7 @@ def extract_samples_complete_fixed(df):
     flush_current_dilution()
     return samples, formulations
 
+
 # === Streamlit Web App ===
 st.set_page_config(page_title="Foam Sample Parser", layout="centered")
 st.title("🧪 Foam Sample Data Extractor")
