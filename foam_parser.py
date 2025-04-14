@@ -199,7 +199,7 @@ def extract_samples_complete_fixed(df):
                 elif "size" in val:
                     column_map["Size"] = i
                 elif "water" in val:
-                    column_map["Liquid Amount"] = i
+                    column_map["Water"] = i
                 elif "date" in val:
                     column_map["Date"] = i
             continue
