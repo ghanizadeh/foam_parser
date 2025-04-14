@@ -51,21 +51,30 @@ def extract_samples_complete_fixed(df):
         data = {
             "SampleID": re.search(r"\((.*?)\)", text).group(1).strip() if re.search(r"\((.*?)\)", text) else None
         }
+        seen_keys_lower = set()
+        
         for p in re.split(r'[,-]', text):
             p = p.strip()
+
             ppm_match = re.match(r"(\d+\.?\d*)\s*ppm\s*(.*)", p, re.IGNORECASE)
             if ppm_match:
                 val, chem = ppm_match.groups()
-                chem = re.sub(r"\(.*?\)", "", chem).strip().lower()
+                chem = re.sub(r"\(.*?\)", "", chem).strip() 
                 chem_key = f"{chem} (ppm)"
-                data[chem_key] = float(val)
+                if chem_key.lower() not in seen_keys_lower:
+                    data[chem_key] = float(val)
+                    seen_keys_lower.add(chem_key.lower())
                 continue
+
             percent_match = re.match(r"(\d+\.?\d*)%\s*(.*)", p, re.IGNORECASE)
             if percent_match:
                 val, chem = percent_match.groups()
-                chem = re.sub(r"\(.*?\)", "", chem).strip().lower()
+                chem = re.sub(r"\(.*?\)", "", chem).strip() 
                 chem_key = f"{chem} (%)"
-                data[chem_key] = float(val)
+                if chem_key.lower() not in seen_keys_lower:
+                    data[chem_key] = float(val)
+                    seen_keys_lower.add(chem_key.lower())
+
         return data
 
     while row < df.shape[0]:
