@@ -319,11 +319,11 @@ if uploaded_file is not None:
             search_id = st.text_input("Enter SampleID to search:")
 
             if search_id:
-                filtered_df = final_df[final_df["SampleID"].str.contains(search_id, case=False, na=False)]
+                filtered_df = final_df[final_df["SampleID"].astype(str).str.strip().str.lower() == search_id.strip().lower()]
                 if not filtered_df.empty:
                     st.dataframe(filtered_df)
                 else:
-                    st.warning(f"No matching SampleID found for: {search_id}")
+                    st.warning(f"No exact match found for SampleID: {search_id}")
     except Exception as e:
         st.error(f"⚠️ Error: {str(e)}")
 else:
