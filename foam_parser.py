@@ -273,6 +273,7 @@ uploaded_file = st.file_uploader("Upload CSV File", type=["csv"])
 if uploaded_file is not None:
     try:
         df_input = pd.read_csv(uploaded_file, header=None)
+        foam_cc_count_raw = df_input.astype(str).apply(lambda row: row.str.contains("Foam (cc)", case=False, na=False)).sum().sum()
         samples, formulations = extract_samples_complete_fixed(df_input)
 
         df_samples = pd.DataFrame(samples)
@@ -302,8 +303,10 @@ if uploaded_file is not None:
 
         final_df = final_df.replace({None: np.nan})
 
-        st.success("✅ Parsing complete!")
-        st.success(f"**🧾 {final_df['SampleID'].nunique()} unique Sample(s) extracted.**")
+        st.success("✅ Parsing complete...")
+        st.success(f"**🧾 {final_df['SampleID'].nunique()} Samples are extracted.**")
+        st.success(f"**🧾 'Foam (cc)' appears {foam_cc_count_raw} time(s) in the input file.**")
+
         st.dataframe(final_df)
  
         # Prepare download
