@@ -304,7 +304,7 @@ if uploaded_file is not None:
 
         st.success("✅ Parsing complete!")
         st.dataframe(final_df)
-        st.write("✅ SampleID column values:", final_df["SampleID"].dropna().unique())
+ 
 
         # Prepare download
         csv = final_df.to_csv(index=False).encode("utf-8")
