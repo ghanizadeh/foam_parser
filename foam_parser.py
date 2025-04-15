@@ -303,7 +303,7 @@ if uploaded_file is not None:
         final_df = final_df.replace({None: np.nan})
 
         st.success("✅ Parsing complete!")
-        st.markdown(f"**🧾 {final_df['SampleID'].nunique()} unique Sample(s) extracted.**")
+        st.success(f"**🧾 {final_df['SampleID'].nunique()} unique Sample(s) extracted.**")
         st.dataframe(final_df)
  
         # Prepare download
