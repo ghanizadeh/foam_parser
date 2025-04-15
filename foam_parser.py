@@ -305,7 +305,6 @@ if uploaded_file is not None:
         st.success("✅ Parsing complete!")
         st.dataframe(final_df)
  
-
         # Prepare download
         csv = final_df.to_csv(index=False).encode("utf-8")
         st.download_button(
