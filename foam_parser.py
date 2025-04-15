@@ -296,7 +296,7 @@ if uploaded_file is not None:
             lambda row: pd.Series(process_dilution(row["Dilution"])),
             axis=1
         )
-        final_df["Tube Volume (mL)"] = final_df["Tube Volume (mL)"].astype(str).str.replace(r"mL\s*tube", "", case=False, regex=True).str.strip()
+        #final_df["Tube Volume (mL)"] = final_df["Tube Volume (mL)"].astype(str).str.replace(r"mL\s*tube", "", case=False, regex=True).str.strip()
         final_df = assign_pilot_column(final_df)
         final_df = final_df.drop_duplicates()
 
