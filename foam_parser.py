@@ -228,6 +228,39 @@ def extract_samples_complete_fixed(df):
     flush_current_dilution()
     return samples, formulations
 
+# After Extraction
+def process_dilution(dilution):
+    pilot = np.nan
+    temp_foam = np.nan
+    water = np.nan
+
+    if pd.isna(dilution):
+        return pilot, temp_foam, water, dilution
+
+    text = str(dilution)
+
+    # Extract and remove AFC
+    if "AFC" in text:
+        pilot = "AFC"
+        text = re.sub(r"\bAFC\b", "", text, flags=re.IGNORECASE)
+
+    # Extract and remove Xcc -> Water
+    xcc_match = re.search(r"(\d+)\s*cc", text, flags=re.IGNORECASE)
+    if xcc_match:
+        water = int(xcc_match.group(1))
+        text = re.sub(r"(\d+)\s*cc", "", text, flags=re.IGNORECASE)
+
+    # Extract and remove Xc (single c or C) -> Temp Foam Monitoring
+    xc_match = re.search(r"(\d+)\s*c(?!c)", text, flags=re.IGNORECASE)
+    if xc_match:
+        temp_foam = int(xc_match.group(1))
+        # text = re.sub(r"(\d+)\s*c(?!c)", "", text, flags=re.IGNORECASE) with Removing
+    cleaned_text = text.strip(" ,;:-").strip()
+    return pilot, temp_foam, water, cleaned_text
+
+def assign_pilot_column(df):
+    df["Pilot"] = df["SampleID"].apply(lambda x: "AFC" if pd.notna(x) and "AFC" in str(x).upper() else None)
+    return df
 
 # === Streamlit Web App ===
 st.set_page_config(page_title="Foam Sample Parser", layout="centered")
@@ -250,6 +283,24 @@ if uploaded_file is not None:
         final_df = final_df.loc[:, final_df.columns.map(lambda col: col.count('%') < 2)]
         final_df = final_df.loc[:, final_df.columns.map(lambda col: col.count('(') < 2)]
         final_df = final_df.drop_duplicates()
+
+        # Create the new columns with default NaN
+        final_df["Initial Foam Volume (cc)"] = 5  # Set default value
+        final_df["Pilot"] = np.nan
+        final_df["Temp Foam Monitoring"] = np.nan
+        final_df["Initial Foam Temp"] = np.nan  # No logic yet, reserved
+        final_df["Water (cc)"] = np.nan  # Ensure 'Water' column exists
+
+        # Apply the processing
+        final_df[["Pilot", "Temp Foam Monitoring", "Water (cc)", "Dilution"]] = final_df.apply(
+            lambda row: pd.Series(process_dilution(row["Dilution"])),
+            axis=1
+        )
+        final_df["Tube Volume (mL)"] = final_df["Tube Volume (mL)"].astype(str).str.replace(r"mL\s*tube", "", case=False, regex=True).str.strip()
+        final_df = assign_pilot_column(final_df)
+        final_df = final_df.drop_duplicates()
+
+        final_df = final_df.replace({None: np.nan})
 
         st.success("✅ Parsing complete!")
         st.dataframe(final_df)
