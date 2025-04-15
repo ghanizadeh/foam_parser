@@ -274,7 +274,7 @@ if uploaded_file is not None:
     try:
         df_input = pd.read_csv(uploaded_file, header=None)
         foam_cc_count = (df_input.astype(str) == "Foam (cc)").sum().sum()
-        day_0_count = (df_input.astype(str) == "Day 0").sum().sum()
+        #day_0_count = (df_input.astype(str) == "Day 0").sum().sum()
 
         samples, formulations = extract_samples_complete_fixed(df_input)
 
@@ -307,7 +307,7 @@ if uploaded_file is not None:
 
         st.success("✅ Parsing complete...")
         st.success(f"**🧾 {final_df['SampleID'].nunique()} Samples are extracted.**")
-        st.success(f"**🧾 Numbers of 'HS' in the input file:  {day_0_count}**")
+        #st.success(f"**🧾 Numbers of 'HS' in the input file:  {day_0_count}**")
         st.success(f"**🧾 Numbers of 'Day 0' in the input file: {foam_cc_count}**")
 
         st.dataframe(final_df)
