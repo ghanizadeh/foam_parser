@@ -313,6 +313,16 @@ if uploaded_file is not None:
             file_name="Parsed_Foam_Data.csv",
             mime="text/csv"
         )
+        # SampleID search box
+        st.markdown("### 🔍 Search for a SampleID")
+        search_id = st.text_input("Enter SampleID to search:")
+
+        if search_id:
+            filtered_df = final_df[final_df["SampleID"].str.contains(search_id, case=False, na=False)]
+            if not filtered_df.empty:
+                st.dataframe(filtered_df)
+            else:
+                st.warning(f"No matching SampleID found for: {search_id}")
     except Exception as e:
         st.error(f"⚠️ Error: {str(e)}")
 else:
