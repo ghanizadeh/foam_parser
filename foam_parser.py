@@ -308,7 +308,7 @@ if uploaded_file is not None:
         st.success("✅ Parsing complete...")
         st.success(f"**🧾 {final_df['SampleID'].nunique()} Samples are extracted.**")
         #st.success(f"**🧾 Numbers of 'HS' in the input file:  {day_0_count}**")
-        st.success(f"**🧾 Numbers of 'Day 0' in the input file: {foam_cc_count}**")
+        #st.success(f"**🧾 Numbers of 'Day 0' in the input file: {foam_cc_count}**")
 
         st.dataframe(final_df)
  
