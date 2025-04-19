@@ -46,7 +46,8 @@ if uploaded_file is not None:
     parsed_buffer.seek(0)
 
     # Process for single line transformation
-    df_input = final_df[final_df["Day"].notna()]
+    df_input=final_df
+    df_input = df_input[df_input["Day"].notna()]
     df_input["Day_Num"] = df_input["Day"].str.extract(r'(\\d+)').astype(int)
     max_day = df_input["Day_Num"].max()
 
