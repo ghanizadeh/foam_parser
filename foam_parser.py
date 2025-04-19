@@ -37,7 +37,7 @@ uploaded_file = st.file_uploader("Upload CSV File", type=["csv"])
 if uploaded_file is not None:
     try:
         df_input = pd.read_csv(uploaded_file, header=None)
-        samples, formulations = extract_samples_complete_fixed(df_input)
+        samples, formulations = myUtility.extract_samples_complete_fixed(df_input)
         df_samples = pd.DataFrame(samples)
         df_formulations = pd.DataFrame.from_dict(formulations, orient="index")
         df_formulations["SampleID"] = df_formulations.index
@@ -53,11 +53,11 @@ if uploaded_file is not None:
         
         # Apply the processing
         final_df[["Pilot", "Temp Foam Monitoring", "Initial Foam Volume (cc)", "Dilution", "Ratio","Sonicated"]] = final_df.apply(
-            lambda row: pd.Series(process_dilution(row["Dilution"])),
+            lambda row: pd.Series(myUtility.process_dilution(row["Dilution"])),
             axis=1
         )
         final_df["Tube Volume (mL)"] = final_df["Tube Volume (mL)"].astype(str).str.replace(r"mL\s*tube", "", case=False, regex=True).str.strip()
-        final_df = assign_pilot_column(final_df)
+        final_df = myUtility.assign_pilot_column(final_df)
         final_df = final_df.drop_duplicates()
         
         final_df["time"] = None
