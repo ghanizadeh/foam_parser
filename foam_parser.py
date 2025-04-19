@@ -32,7 +32,7 @@ st.title("🧪 Foam Sample Data Extractor")
 st.markdown("Upload a CSV file containing foam sample data. The app will extract and display structured results.")
 
 # File uploader
-uploaded_file = st.file_uploader("Upload CSV File", type=["csv"])
+uploaded_file = st.file_uploader("Upload CSV File", type=["csv"], encoding="cp1252")
 
 if uploaded_file is not None:
     try:
