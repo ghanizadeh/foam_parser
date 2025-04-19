@@ -32,8 +32,17 @@ st.title("🧪 Foam Sample Data Extractor")
 st.markdown("Upload a CSV file containing foam sample data. The app will extract and display structured results.")
 
 # File uploader
-uploaded_file = st.file_uploader("Upload CSV File", type=["csv"], encoding="cp1252")
-
+uploaded_file = st.file_uploader("Upload CSV File", type=["csv"])
+if uploaded_file is not None:
+    try:
+        df = pd.read_csv(uploaded_file)  # default utf-8
+    except UnicodeDecodeError:
+        # Try with alternative encoding
+        uploaded_file.seek(0)  # reset file pointer
+        df = pd.read_csv(uploaded_file, encoding="cp1252")  # or "ISO-8859-1"
+    
+    st.write("Preview of the uploaded file:")
+    st.dataframe(df)
 if uploaded_file is not None:
     try:
         df_input = pd.read_csv(uploaded_file, header=None)
