@@ -24,7 +24,7 @@ if uploaded_file is not None:
 if uploaded_file is not None:
     try:
         
-        df_input = pd.read_csv("Kinder Dilution Stability - Input(Yates Foam-no oil).csv", header=None, encoding="cp1252")
+        df_input = pd.read_csv(uploaded_file, header=None)
         samples, formulations = myUtility.extract_samples_complete_fixed(df_input)
         df_samples = pd.DataFrame(samples)
         df_formulations = pd.DataFrame.from_dict(formulations, orient="index")
