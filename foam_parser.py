@@ -115,7 +115,7 @@ if uploaded_file is not None:
         st.success(f"**🧾 {final_df['SampleID'].nunique()} unique samples are extracted.**")
         st.success(f"**🧾 {final_df.shape[0]} unique samples + dilution are extracted.**")
 
-        st.dataframe(final_df)
+        st.dataframe(df_transformed_fixed)
  
         # Prepare download
         csv = final_df.to_csv(index=False).encode("utf-8")
