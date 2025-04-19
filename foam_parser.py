@@ -116,7 +116,7 @@ if uploaded_file is not None:
             file_name="Parsed_Foam_Data.csv",
             mime="text/csv"
         )
-         csv2 = df_transformed_fixed.to_csv(index=False).encode("utf-8")
+        csv2 = df_transformed_fixed.to_csv(index=False).encode("utf-8")
         st.download_button(
             label="📥 Download Single Line Data",
             data=csv,
