@@ -10,7 +10,16 @@ st.title("Foam (no Oil) Sample Extractor")
 
 # Upload section
 uploaded_file = st.file_uploader("Upload CSV File", type=["csv"])
-
+if uploaded_file is not None:
+    try:
+        df = pd.read_csv(uploaded_file)  # default utf-8
+    except UnicodeDecodeError:
+        # Try with alternative encoding
+        uploaded_file.seek(0)  # reset file pointer
+        df = pd.read_csv(uploaded_file, encoding="cp1252")  # or "ISO-8859-1"
+    
+    st.write("Preview of the uploaded file:")
+    st.dataframe(df)
 if uploaded_file is not None:
     st.success("Parsing Complete")
     df_input = pd.read_csv(uploaded_file, header=None, encoding="cp1252")
