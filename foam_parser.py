@@ -85,6 +85,7 @@ if uploaded_file is not None:
 
             output_rows.append(row)
 
+
         # Create DataFrame
         df_transformed_fixed = pd.DataFrame(output_rows)
 
@@ -93,7 +94,7 @@ if uploaded_file is not None:
         #st.success(f"**🧾 Numbers of 'HS' in the input file:  {day_0_count}**")
         #st.success(f"**🧾 Numbers of 'Foam (cc)' in the input file: {foam_cc_count}**")
 
-        st.dataframe(df_transformed_fixed)
+        st.dataframe(final_df)
  
         # Prepare download
         csv = final_df.to_csv(index=False).encode("utf-8")
