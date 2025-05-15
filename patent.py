@@ -1,60 +1,73 @@
 import streamlit as st
+import pandas as pd
 import requests
 from bs4 import BeautifulSoup
+import io
 
 st.set_page_config(page_title="Smart Patent Search", layout="wide")
 st.title("🔍 Smart Patent Search")
 
-# Step 1: Get user input
-keyword = st.text_input("Enter keyword(s) to search patents:", "foam surfactant oilfield")
-num_results = st.number_input("How many results to fetch?", min_value=1, max_value=50, value=10, step=1)
+st.markdown("### Upload CSV or Enter Patent URLs Below")
+upload_option = st.radio("Choose input method:", ["📁 Upload CSV", "🔗 Enter URLs manually"])
 
-@st.cache_data(show_spinner=False)
-def get_google_patents_links(keyword, max_results):
-    query = keyword.replace(" ", "+")
-    url = f"https://patents.google.com/?q={query}&num={max_results}"
-    headers = {"User-Agent": "Mozilla/5.0"}
-    response = requests.get(url, headers=headers)
-    soup = BeautifulSoup(response.content, "html.parser")
+url_input = ""
 
-    links = []
-    for a in soup.find_all("a", href=True):
-        if "/patent/" in a['href'] and "/en" in a['href']:
-            full_url = "https://patents.google.com" + a['href']
-            if full_url not in links:
-                links.append(full_url)
-            if len(links) >= max_results:
-                break
-    return links
+# Option 1: CSV Upload
+if upload_option == "📁 Upload CSV":
+    uploaded_file = st.file_uploader("Upload a CSV file with 'result link' column", type=["csv"])
+    if uploaded_file:
+        try:
+            df = pd.read_csv(uploaded_file, skiprows=1)  # skip the first row
+            if "result link" not in df.columns:
+                st.error("CSV must contain a 'result link' column.")
+            else:
+                urls = df["result link"].dropna().tolist()
+                url_input = "\n".join(urls)
+                st.success(f"{len(urls)} URLs extracted from CSV.")
+        except Exception as e:
+            st.error(f"Error processing CSV: {e}")
+
+# Option 2: Manual Entry
+if upload_option == "🔗 Enter URLs manually":
+    url_input = st.text_area("Enter Google Patent URLs (one per line):", height=200)
 
 @st.cache_data(show_spinner=False)
 def extract_claims_from_google_patent_url(url):
     headers = {"User-Agent": "Mozilla/5.0"}
-    response = requests.get(url, headers=headers)
-    soup = BeautifulSoup(response.content, "html.parser")
-    claims = soup.find_all("div", {"class": "claim"})
-    return [c.text.strip() for c in claims]
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        soup = BeautifulSoup(response.content, "html.parser")
+        claims = soup.find_all("div", {"class": "claim"})
+        return [c.text.strip() for c in claims]
+    except Exception as e:
+        return [f"Error retrieving claims from {url}: {str(e)}"]
 
-if st.button("Search and Extract Claims"):
-    with st.spinner("Fetching patents and extracting claims..."):
-        links = get_google_patents_links(keyword, num_results)
-        all_claims = []
-        full_text = ""
+# Display extracted URLs if from CSV
+if upload_option == "📁 Upload CSV" and url_input:
+    st.text_area("Extracted Patent URLs from CSV:", url_input, height=200)
 
-        for idx, url in enumerate(links):
-            claims = extract_claims_from_google_patent_url(url)
-            all_claims.append((url, claims))
+# Extract Claims Button
+if st.button("Extract Claims"):
+    urls = [line.strip() for line in url_input.strip().split("\n") if line.strip()]
+    if not urls:
+        st.warning("Please enter at least one patent URL.")
+    else:
+        with st.spinner("Extracting claims from provided patents..."):
+            all_claims = []
+            full_text = ""
 
-            full_text += f"Patent {idx+1}: {url}\n"
-            for i, c in enumerate(claims[:5]):
-                full_text += f"  Claim {i+1}: {c}\n"
-            full_text += "\n"
+            for idx, url in enumerate(urls):
+                claims = extract_claims_from_google_patent_url(url)
+                all_claims.append((url, claims))
 
-        # Display the results
-        for url, claims in all_claims:
-            st.markdown(f"### 🔗 [{url}]({url})")
-            for i, c in enumerate(claims[:5]):
-                st.write(f"**Claim {i+1}:** {c}")
+                full_text += f"Patent {idx+1}: {url}\n"
+                for i, c in enumerate(claims[:5]):
+                    full_text += f"  Claim {i+1}: {c}\n"
+                full_text += "\n"
 
-        # Save to file
-        st.download_button("📄 Download Claims as .txt", full_text.encode("utf-8"), file_name="patent_claims.txt")
+            for url, claims in all_claims:
+                st.markdown(f"### 🔗 [{url}]({url})")
+                for i, c in enumerate(claims[:5]):
+                    st.write(f"**Claim {i+1}:** {c}")
+
+            st.download_button("📄 Download Claims as .txt", full_text.encode("utf-8"), file_name="patent_claims.txt")
