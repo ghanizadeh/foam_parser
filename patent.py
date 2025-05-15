@@ -4,7 +4,6 @@ import requests
 from bs4 import BeautifulSoup
 import io
 
-
 st.set_page_config(page_title="Smart Patent Search (only Claims)", layout="wide")
 st.title("🔍 Smart Patent Search")
 
@@ -62,13 +61,13 @@ if st.button("Extract Claims"):
                 all_claims.append((url, claims))
 
                 full_text += f"Patent {idx+1}: {url}\n"
-                for i, c in enumerate(claims[:10]):
+                for i, c in enumerate(claims[:100]):
                     full_text += f"  Claim {i+1}: {c}\n"
                 full_text += "\n"
 
             for url, claims in all_claims:
                 st.markdown(f"### 🔗 [{url}]({url})")
-                for i, c in enumerate(claims[:10]):
+                for i, c in enumerate(claims[:100]):
                     st.write(f"**Claim {i+1}:** {c}")
 
             st.download_button("📄 Download Claims.txt", full_text.encode("utf-8"), file_name="patent_claims.txt")
