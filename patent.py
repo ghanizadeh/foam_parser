@@ -62,13 +62,13 @@ if st.button("Extract Claims"):
                 all_claims.append((url, claims))
 
                 full_text += f"Patent {idx+1}: {url}\n"
-                for i, c in enumerate(claims[:5]):
+                for i, c in enumerate(claims[:10]):
                     full_text += f"  Claim {i+1}: {c}\n"
                 full_text += "\n"
 
             for url, claims in all_claims:
                 st.markdown(f"### 🔗 [{url}]({url})")
-                for i, c in enumerate(claims[:100]):
+                for i, c in enumerate(claims[:10]):
                     st.write(f"**Claim {i+1}:** {c}")
 
             st.download_button("📄 Download Claims.txt", full_text.encode("utf-8"), file_name="patent_claims.txt")
