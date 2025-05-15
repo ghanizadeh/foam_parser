@@ -4,7 +4,7 @@ import requests
 from bs4 import BeautifulSoup
 import io
 
-st.set_page_config(page_title="Smart Patent Search", layout="wide")
+st.set_page_config(page_title="Smart Patent Search (only Claims)", layout="wide")
 st.title("🔍 Smart Patent Search")
 
 st.markdown("### Upload CSV or Enter Patent URLs Below")
@@ -14,7 +14,7 @@ url_input = ""
 
 # Option 1: CSV Upload
 if upload_option == "📁 Upload CSV":
-    uploaded_file = st.file_uploader("Upload a CSV file with 'result link' column", type=["csv"])
+    uploaded_file = st.file_uploader("Upload a CSV file", type=["csv"])
     if uploaded_file:
         try:
             df = pd.read_csv(uploaded_file, skiprows=1)  # skip the first row
@@ -52,7 +52,7 @@ if st.button("Extract Claims"):
     if not urls:
         st.warning("Please enter at least one patent URL.")
     else:
-        with st.spinner("Extracting claims from provided patents..."):
+        with st.spinner("Extracting claims ..."):
             all_claims = []
             full_text = ""
 
@@ -70,4 +70,4 @@ if st.button("Extract Claims"):
                 for i, c in enumerate(claims[:5]):
                     st.write(f"**Claim {i+1}:** {c}")
 
-            st.download_button("📄 Download Claims as .txt", full_text.encode("utf-8"), file_name="patent_claims.txt")
+            st.download_button("📄 Download Claims.txt", full_text.encode("utf-8"), file_name="patent_claims.txt")
