@@ -3,5 +3,8 @@ pandas
 numpy
 requests
 beautifulsoup4
+scikit-learn
 matplotlib
+shap
+
 
