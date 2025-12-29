@@ -1,84 +1,277 @@
 import streamlit as st
 import pandas as pd
-import requests
-from bs4 import BeautifulSoup
-import io
+import numpy as np
+import matplotlib.pyplot as plt
+import shap
 
-st.set_page_config(page_title="Smart Patent Search (only Claims)", layout="wide")
-st.title("🔍 Smart Patent Search")
+from sklearn.model_selection import train_test_split, KFold
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
 
-st.markdown("### Upload CSV or Enter Patent URLs Below")
-upload_option = st.radio("Choose input method:", ["📁 Upload CSV", "🔗 Enter URLs manually"])
+# ==========================================================
+# Utility functions
+# ==========================================================
+def a20_index(y_true, y_pred):
+    ratio = y_pred / y_true
+    return np.mean((ratio >= 0.8) & (ratio <= 1.2))
 
-url_input = ""
 
-# Option 1: CSV Upload
-if upload_option == "📁 Upload CSV":
-    uploaded_file = st.file_uploader("Upload a CSV file", type=["csv"])
-    if uploaded_file:
-        try:
-            df = pd.read_csv(uploaded_file, skiprows=1)
-            if "result link" not in df.columns:
-                st.error("CSV must contain a 'result link' column.")
-            else:
-                urls = df["result link"].dropna().tolist()
-                url_input = "\n".join(urls)
-                st.success(f"{len(urls)} URLs extracted from CSV.")
-        except Exception as e:
-            st.error(f"Error processing CSV: {e}")
+# ==========================================================
+# Page config
+# ==========================================================
+st.set_page_config(
+    page_title="Permeability Prediction – Optimized Random Forest",
+    layout="wide"
+)
 
-# Option 2: Manual Entry
-if upload_option == "🔗 Enter URLs manually":
-    url_input = st.text_area("Enter Google Patent URLs (one per line):", height=200)
+st.title("🪨 Permeability Prediction (Gap-Optimized Random Forest)")
 
-@st.cache_data(show_spinner=False)
-def extract_title_and_claims_from_google_patent_url(url):
-    headers = {"User-Agent": "Mozilla/5.0"}
-    try:
-        response = requests.get(url, headers=headers, timeout=10)
-        soup = BeautifulSoup(response.content, "html.parser")
 
-        # Extract Title
-        title_tag = soup.find("span", {"itemprop": "title"})
-        title = title_tag.text.strip() if title_tag else "No title found"
+# ==========================================================
+# Upload data
+# ==========================================================
+uploaded_file = st.file_uploader("📂 Upload CSV file", type=["csv"])
+if uploaded_file is None:
+    st.stop()
 
-        # Extract Claims
-        claims = soup.find_all("div", {"class": "claim"})
-        claim_texts = [c.text.strip() for c in claims]
+df = pd.read_csv(uploaded_file)
+st.success("Dataset loaded successfully")
 
-        return title, claim_texts
 
-    except Exception as e:
-        return "Error", [f"Error retrieving data from {url}: {str(e)}"]
+# ==========================================================
+# Feature / target selection
+# ==========================================================
+st.subheader("🎯 Feature & Target Selection")
 
-# Display extracted URLs if from CSV
-if upload_option == "📁 Upload CSV" and url_input:
-    st.text_area("Extracted Patent URLs from CSV:", url_input, height=200)
+columns = df.columns.tolist()
 
-# Extract Claims Button
-if st.button("Extract Claims"):
-    urls = [line.strip() for line in url_input.strip().split("\n") if line.strip()]
-    if not urls:
-        st.warning("Please enter at least one patent URL.")
+default_features = [
+    c for c in columns
+    if c in [
+        "Rebound hardness (HLD)",
+        "Corrected Vp (m/s)",
+        "Corrected Vs (m/s)",
+        "Quartz"
+    ]
+]
+
+features = st.multiselect(
+    "Select input features",
+    options=columns,
+    default=default_features
+)
+
+target = st.selectbox(
+    "Select target variable",
+    options=[c for c in columns if c not in features],
+    index=columns.index("Permeability (md)")
+    if "Permeability (md)" in columns else 0
+)
+
+if len(features) == 0:
+    st.warning("Please select at least one feature")
+    st.stop()
+
+
+# ==========================================================
+# Clean data
+# ==========================================================
+df = df[features + [target]].replace([np.inf, -np.inf], np.nan).dropna()
+
+st.subheader("📊 Dataset Summary")
+st.dataframe(df.describe().T)
+
+
+# ==========================================================
+# Target transformation
+# ==========================================================
+st.subheader("🔄 Target Transformation")
+
+log_target = st.checkbox(
+    "Apply log10 transform to target (recommended for permeability)",
+    value=True
+)
+
+X = df[features].values
+y_raw = df[target].values
+
+if log_target:
+    y = np.log10(np.maximum(y_raw, 1e-12))
+else:
+    y = y_raw.copy()
+
+
+# ==========================================================
+# Validation settings
+# ==========================================================
+st.subheader("⚙️ Validation Settings")
+
+test_size = st.slider(
+    "Test size (%)",
+    min_value=10,
+    max_value=40,
+    value=25
+) / 100
+
+
+# ==========================================================
+# RF optimization settings
+# ==========================================================
+st.subheader("🧠 Random Forest Optimization (Gap-Focused)")
+
+n_estimators = st.slider(
+    "Number of trees",
+    min_value=100,
+    max_value=800,
+    value=600,
+    step=50
+)
+
+max_depth_list = [10, 12, 14]
+min_samples_leaf_list = [4, 5, 6]
+max_features_list = [0.5, 0.6, 0.7]
+
+
+# ==========================================================
+# Train & optimize
+# ==========================================================
+if st.button("🚀 Train & Optimize Random Forest"):
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y,
+        test_size=test_size,
+        random_state=42
+    )
+
+    best_model = None
+    best_gap = np.inf
+
+    with st.spinner("Optimizing Random Forest (minimizing generalization gap)..."):
+        for depth in max_depth_list:
+            for leaf in min_samples_leaf_list:
+                for feat in max_features_list:
+
+                    rf = RandomForestRegressor(
+                        n_estimators=n_estimators,
+                        max_depth=depth,
+                        min_samples_leaf=leaf,
+                        max_features=feat,
+                        bootstrap=True,
+                        random_state=42,
+                        n_jobs=-1
+                    )
+
+                    rf.fit(X_train, y_train)
+
+                    r2_tr = r2_score(y_train, rf.predict(X_train))
+                    r2_te = r2_score(y_test, rf.predict(X_test))
+                    gap = abs(r2_tr - r2_te)
+
+                    if gap < best_gap:
+                        best_gap = gap
+                        best_model = rf
+
+    # ======================================================
+    # Predictions
+    # ======================================================
+    y_train_pred = best_model.predict(X_train)
+    y_test_pred  = best_model.predict(X_test)
+
+    if log_target:
+        y_train_true = 10 ** y_train
+        y_test_true  = 10 ** y_test
+        y_train_pred_orig = 10 ** y_train_pred
+        y_test_pred_orig  = 10 ** y_test_pred
     else:
-        with st.spinner("Extracting patent titles and claims..."):
-            all_data = []
-            full_text = ""
+        y_train_true = y_train
+        y_test_true  = y_test
+        y_train_pred_orig = y_train_pred
+        y_test_pred_orig  = y_test_pred
 
-            for idx, url in enumerate(urls):
-                title, claims = extract_title_and_claims_from_google_patent_url(url)
-                all_data.append((url, title, claims))
 
-                full_text += f"Patent {idx+1}: {url}\n"
-                full_text += f"Title: {title}\n"
-                for i, c in enumerate(claims[:100]):
-                    full_text += f"  Claim {i+1}: {c}\n"
-                full_text += "\n"
+    # ======================================================
+    # Metrics (CORRECT SCALES)
+    # ======================================================
+    metrics_df = pd.DataFrame({
+        "Metric": ["R² (model scale)", "MSE (md²)", "RMSE (md)", "MAE (md)", "a20 index"],
+        "Train": [
+            r2_score(y_train, y_train_pred),
+            mean_squared_error(y_train_true, y_train_pred_orig),
+            np.sqrt(mean_squared_error(y_train_true, y_train_pred_orig)),
+            mean_absolute_error(y_train_true, y_train_pred_orig),
+            a20_index(y_train_true, y_train_pred_orig)
+        ],
+        "Test": [
+            r2_score(y_test, y_test_pred),
+            mean_squared_error(y_test_true, y_test_pred_orig),
+            np.sqrt(mean_squared_error(y_test_true, y_test_pred_orig)),
+            mean_absolute_error(y_test_true, y_test_pred_orig),
+            a20_index(y_test_true, y_test_pred_orig)
+        ]
+    })
 
-            for url, title, claims in all_data:
-                st.markdown(f"### 🔗 [{url}]({url})")
-                st.markdown(f"**Title: {title}**")
-                for i, c in enumerate(claims[:100]):
-                    st.write(f"**Claim {i+1}:** {c}")
+    st.subheader("📊 Model Performance Metrics")
+    numeric_cols = metrics_df.select_dtypes(include=[np.number]).columns
 
-            st.download_button("📄 Download Claims.txt", full_text.encode("utf-8"), file_name="patent_claims.txt")
+    st.dataframe(
+        metrics_df.style.format({col: "{:.4f}" for col in numeric_cols})
+    )
+
+
+
+    # ======================================================
+    # Predicted vs Measured plot
+    # ======================================================
+    st.subheader("📈 Predicted vs Measured Permeability")
+
+    global_min = min(
+        y_train_true.min(), y_train_pred_orig.min(),
+        y_test_true.min(), y_test_pred_orig.min()
+    )
+    global_max = max(
+        y_train_true.max(), y_train_pred_orig.max(),
+        y_test_true.max(), y_test_pred_orig.max()
+    )
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6), sharex=True, sharey=True)
+
+    axes[0].scatter(y_train_true, y_train_pred_orig,
+                    facecolors="none", edgecolors="black", marker="o")
+    axes[0].plot([global_min, global_max], [global_min, global_max], "k--")
+    axes[0].set_title("Train")
+    axes[0].set_xlabel("Observed Permeability (md)")
+    axes[0].set_ylabel("Predicted Permeability (md)")
+    axes[0].set_aspect("equal", adjustable="box")
+
+    axes[1].scatter(y_test_true, y_test_pred_orig,
+                    facecolors="none", edgecolors="black", marker="^")
+    axes[1].plot([global_min, global_max], [global_min, global_max], "k--")
+    axes[1].set_title("Test")
+    axes[1].set_xlabel("Observed Permeability (md)")
+    axes[1].set_ylabel("Predicted Permeability (md)")
+    axes[1].tick_params(axis="y", labelleft=True)
+    axes[1].set_aspect("equal", adjustable="box")
+
+    plt.tight_layout()
+    st.pyplot(fig)
+
+
+    # ======================================================
+    # SHAP analysis
+    # ======================================================
+    st.subheader("🧠 SHAP Explainability (Random Forest)")
+
+    X_train_df = pd.DataFrame(X_train, columns=features)
+    explainer = shap.TreeExplainer(best_model)
+    shap_values = explainer.shap_values(X_train_df)
+
+    fig_bar = plt.figure(figsize=(8, 4))
+    shap.summary_plot(shap_values, X_train_df, plot_type="bar", show=False)
+    st.pyplot(fig_bar)
+
+    fig_bee = plt.figure(figsize=(8, 5))
+    shap.summary_plot(shap_values, X_train_df, show=False)
+    st.pyplot(fig_bee)
+
+ 
+
+    st.success("✅ Training, evaluation, and SHAP analysis completed.")
