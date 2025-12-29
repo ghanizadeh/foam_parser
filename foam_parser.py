@@ -1,121 +1,277 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import myUtility
-import re
-from io import BytesIO
+import matplotlib.pyplot as plt
+import shap
 
-st.set_page_config(page_title="Foam (no Oil) Sample Extractor")
-st.title("Foam (no Oil) Sample Extractor")
+from sklearn.model_selection import train_test_split, KFold
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
 
-# Upload section
-uploaded_file = st.file_uploader("Upload CSV File", type=["csv"])
-if uploaded_file is not None:
-    try:
-        df = pd.read_csv(uploaded_file)  # default utf-8
-    except UnicodeDecodeError:
-        # Try with alternative encoding
-        uploaded_file.seek(0)  # reset file pointer
-        df = pd.read_csv(uploaded_file, encoding="cp1252")  # or "ISO-8859-1"
-    
-    st.write("Preview of the uploaded file:")
-    st.dataframe(df)
-
-if uploaded_file is not None:
-    try:
-        
-        df_input = pd.read_csv(uploaded_file, header=None)
-        samples, formulations = myUtility.extract_samples_complete_fixed(df_input)
-        df_samples = pd.DataFrame(samples)
-        df_formulations = pd.DataFrame.from_dict(formulations, orient="index")
-        df_formulations["SampleID"] = df_formulations.index
-        final_df = df_samples.merge(df_formulations, on="SampleID", how="left")
-
-        # Create the new columns with default NaN
-        final_df["Initial Foam Volume (cc)"] = "5cc"  # Set default value
-        final_df["Pilot"] = np.nan
-        final_df["Temp Foam Monitoring"] = np.nan
-        final_df["Initial Foam Temp"] = np.nan  # No logic yet, reserved
-        final_df["Water (cc)"] = np.nan   
-        final_df["Sonicated"] = np.nan  
-
-        # Apply the processing
-        final_df[["Pilot", "Temp Foam Monitoring", "Initial Foam Volume (cc)", "Dilution", "Ratio","Sonicated"]] = final_df.apply(
-            lambda row: pd.Series(myUtility.process_dilution(row["Dilution"])),
-            axis=1
-        )
-        final_df["Tube Volume (mL)"] = final_df["Tube Volume (mL)"].astype(str).str.replace(r"mL\s*tube", "", case=False, regex=True).str.strip()
-        final_df = myUtility.assign_pilot_column(final_df)
-        final_df = final_df.drop_duplicates()
-
-        final_df["time"] = None
-        final_df = final_df.replace({None: np.nan})
-        #final_df.to_csv("Parsed_Foam_Data.csv", index=False)
-        df_input = final_df
-        df_input = df_input[df_input["Day"].notna()]
-        # Convert Day column to numeric index
-        df_input["Day_Num"] = df_input["Day"].str.extract(r'(\d+)').astype(int)
-        # Get max day number
-        max_day = df_input["Day_Num"].max()
-        # Identify formulation columns
-        formulation_cols = [
-            col for col in df_input.columns
-            if col not in ["SampleID", "Day", "Day_Num", "Foam (cc)", "Foam Texture", "Date", "Baseline", "Pilot"]
-        ]
-
-        # Recreate the output with SampleID and full Dilution preserved
-        output_rows = []
-        for (sample_id, dilution), group in df_input.groupby(["SampleID", "Dilution"]):
-            row = {"SampleID": sample_id, "Dilution": dilution}
-
-            for col in formulation_cols:
-                if col in group.columns:
-                    row[col] = group[col].dropna().iloc[0] if not group[col].dropna().empty else np.nan
-
-            day0_row = group[group["Day_Num"] == 0]
-            row["Date"] = day0_row["Date"].iloc[0] if not day0_row.empty else np.nan
-            row["Baseline"] = "*" if group["Baseline"].astype(str).str.contains(r"\*").any() else ""
-            pilot_val = group["Pilot"].dropna()
-            row["Pilot"] = pilot_val.iloc[0] if not pilot_val.empty else ""
-
-            for day in range(max_day + 1):
-                day_row = group[group["Day_Num"] == day]
-                row[f"Day {day} - Amount (cc)"] = day_row["Foam (cc)"].values[0] if not day_row.empty else np.nan
-                row[f"Day {day} - Foam Texture"] = day_row["Foam Texture"].values[0] if not day_row.empty else ""
-
-            output_rows.append(row)
+# ==========================================================
+# Utility functions
+# ==========================================================
+def a20_index(y_true, y_pred):
+    ratio = y_pred / y_true
+    return np.mean((ratio >= 0.8) & (ratio <= 1.2))
 
 
-        # Create DataFrame
-        df_transformed_fixed = pd.DataFrame(output_rows)
+# ==========================================================
+# Page config
+# ==========================================================
+st.set_page_config(
+    page_title="Permeability Prediction – Optimized Random Forest",
+    layout="wide"
+)
 
-        st.success("✅ Parsing complete...")
-        st.success(f"**🧾 {final_df['SampleID'].nunique()} Samples are extracted.**")
-        #st.success(f"**🧾 Numbers of 'HS' in the input file:  {day_0_count}**")
-        #st.success(f"**🧾 Numbers of 'Foam (cc)' in the input file: {foam_cc_count}**")
+st.title("🪨 Permeability Prediction (Gap-Optimized Random Forest)")
 
-        st.dataframe(final_df)
- 
-        # Prepare download
-        csv = final_df.to_csv(index=False).encode("utf-8")
-        st.download_button(
-            label="📥 Download Parsed Data",
-            data=csv,
-            file_name="Parsed_Foam_Data.csv",
-            mime="text/csv"
-        )
-        # SampleID search box
-        if "final_df" in locals():
-            st.markdown("### 🔍 Search for a SampleID")
-            search_id = st.text_input("Enter SampleID to search:")
 
-            if search_id:
-                filtered_df = final_df[final_df["SampleID"].astype(str).str.strip().str.lower() == search_id.strip().lower()]
-                if not filtered_df.empty:
-                    st.dataframe(filtered_df)
-                else:
-                    st.warning(f"No exact match found for SampleID: {search_id}")
-    except Exception as e:
-        st.error(f"⚠️ Error: {str(e)}")
+# ==========================================================
+# Upload data
+# ==========================================================
+uploaded_file = st.file_uploader("📂 Upload CSV file", type=["csv"])
+if uploaded_file is None:
+    st.stop()
+
+df = pd.read_csv(uploaded_file)
+st.success("Dataset loaded successfully")
+
+
+# ==========================================================
+# Feature / target selection
+# ==========================================================
+st.subheader("🎯 Feature & Target Selection")
+
+columns = df.columns.tolist()
+
+default_features = [
+    c for c in columns
+    if c in [
+        "Rebound hardness (HLD)",
+        "Corrected Vp (m/s)",
+        "Corrected Vs (m/s)",
+        "Quartz"
+    ]
+]
+
+features = st.multiselect(
+    "Select input features",
+    options=columns,
+    default=default_features
+)
+
+target = st.selectbox(
+    "Select target variable",
+    options=[c for c in columns if c not in features],
+    index=columns.index("Permeability (md)")
+    if "Permeability (md)" in columns else 0
+)
+
+if len(features) == 0:
+    st.warning("Please select at least one feature")
+    st.stop()
+
+
+# ==========================================================
+# Clean data
+# ==========================================================
+df = df[features + [target]].replace([np.inf, -np.inf], np.nan).dropna()
+
+st.subheader("📊 Dataset Summary")
+st.dataframe(df.describe().T)
+
+
+# ==========================================================
+# Target transformation
+# ==========================================================
+st.subheader("🔄 Target Transformation")
+
+log_target = st.checkbox(
+    "Apply log10 transform to target (recommended for permeability)",
+    value=True
+)
+
+X = df[features].values
+y_raw = df[target].values
+
+if log_target:
+    y = np.log10(np.maximum(y_raw, 1e-12))
 else:
-    st.info("👈 Upload a CSV file to begin.")
+    y = y_raw.copy()
+
+
+# ==========================================================
+# Validation settings
+# ==========================================================
+st.subheader("⚙️ Validation Settings")
+
+test_size = st.slider(
+    "Test size (%)",
+    min_value=10,
+    max_value=40,
+    value=25
+) / 100
+
+
+# ==========================================================
+# RF optimization settings
+# ==========================================================
+st.subheader("🧠 Random Forest Optimization (Gap-Focused)")
+
+n_estimators = st.slider(
+    "Number of trees",
+    min_value=100,
+    max_value=800,
+    value=600,
+    step=50
+)
+
+max_depth_list = [10, 12, 14]
+min_samples_leaf_list = [4, 5, 6]
+max_features_list = [0.5, 0.6, 0.7]
+
+
+# ==========================================================
+# Train & optimize
+# ==========================================================
+if st.button("🚀 Train & Optimize Random Forest"):
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y,
+        test_size=test_size,
+        random_state=42
+    )
+
+    best_model = None
+    best_gap = np.inf
+
+    with st.spinner("Optimizing Random Forest (minimizing generalization gap)..."):
+        for depth in max_depth_list:
+            for leaf in min_samples_leaf_list:
+                for feat in max_features_list:
+
+                    rf = RandomForestRegressor(
+                        n_estimators=n_estimators,
+                        max_depth=depth,
+                        min_samples_leaf=leaf,
+                        max_features=feat,
+                        bootstrap=True,
+                        random_state=42,
+                        n_jobs=-1
+                    )
+
+                    rf.fit(X_train, y_train)
+
+                    r2_tr = r2_score(y_train, rf.predict(X_train))
+                    r2_te = r2_score(y_test, rf.predict(X_test))
+                    gap = abs(r2_tr - r2_te)
+
+                    if gap < best_gap:
+                        best_gap = gap
+                        best_model = rf
+
+    # ======================================================
+    # Predictions
+    # ======================================================
+    y_train_pred = best_model.predict(X_train)
+    y_test_pred  = best_model.predict(X_test)
+
+    if log_target:
+        y_train_true = 10 ** y_train
+        y_test_true  = 10 ** y_test
+        y_train_pred_orig = 10 ** y_train_pred
+        y_test_pred_orig  = 10 ** y_test_pred
+    else:
+        y_train_true = y_train
+        y_test_true  = y_test
+        y_train_pred_orig = y_train_pred
+        y_test_pred_orig  = y_test_pred
+
+
+    # ======================================================
+    # Metrics (CORRECT SCALES)
+    # ======================================================
+    metrics_df = pd.DataFrame({
+        "Metric": ["R² (model scale)", "MSE (md²)", "RMSE (md)", "MAE (md)", "a20 index"],
+        "Train": [
+            r2_score(y_train, y_train_pred),
+            mean_squared_error(y_train_true, y_train_pred_orig),
+            np.sqrt(mean_squared_error(y_train_true, y_train_pred_orig)),
+            mean_absolute_error(y_train_true, y_train_pred_orig),
+            a20_index(y_train_true, y_train_pred_orig)
+        ],
+        "Test": [
+            r2_score(y_test, y_test_pred),
+            mean_squared_error(y_test_true, y_test_pred_orig),
+            np.sqrt(mean_squared_error(y_test_true, y_test_pred_orig)),
+            mean_absolute_error(y_test_true, y_test_pred_orig),
+            a20_index(y_test_true, y_test_pred_orig)
+        ]
+    })
+
+    st.subheader("📊 Model Performance Metrics")
+    numeric_cols = metrics_df.select_dtypes(include=[np.number]).columns
+
+    st.dataframe(
+        metrics_df.style.format({col: "{:.4f}" for col in numeric_cols})
+    )
+
+
+
+    # ======================================================
+    # Predicted vs Measured plot
+    # ======================================================
+    st.subheader("📈 Predicted vs Measured Permeability")
+
+    global_min = min(
+        y_train_true.min(), y_train_pred_orig.min(),
+        y_test_true.min(), y_test_pred_orig.min()
+    )
+    global_max = max(
+        y_train_true.max(), y_train_pred_orig.max(),
+        y_test_true.max(), y_test_pred_orig.max()
+    )
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6), sharex=True, sharey=True)
+
+    axes[0].scatter(y_train_true, y_train_pred_orig,
+                    facecolors="none", edgecolors="black", marker="o")
+    axes[0].plot([global_min, global_max], [global_min, global_max], "k--")
+    axes[0].set_title("Train")
+    axes[0].set_xlabel("Observed Permeability (md)")
+    axes[0].set_ylabel("Predicted Permeability (md)")
+    axes[0].set_aspect("equal", adjustable="box")
+
+    axes[1].scatter(y_test_true, y_test_pred_orig,
+                    facecolors="none", edgecolors="black", marker="^")
+    axes[1].plot([global_min, global_max], [global_min, global_max], "k--")
+    axes[1].set_title("Test")
+    axes[1].set_xlabel("Observed Permeability (md)")
+    axes[1].set_ylabel("Predicted Permeability (md)")
+    axes[1].tick_params(axis="y", labelleft=True)
+    axes[1].set_aspect("equal", adjustable="box")
+
+    plt.tight_layout()
+    st.pyplot(fig)
+
+
+    # ======================================================
+    # SHAP analysis
+    # ======================================================
+    st.subheader("🧠 SHAP Explainability (Random Forest)")
+
+    X_train_df = pd.DataFrame(X_train, columns=features)
+    explainer = shap.TreeExplainer(best_model)
+    shap_values = explainer.shap_values(X_train_df)
+
+    fig_bar = plt.figure(figsize=(8, 4))
+    shap.summary_plot(shap_values, X_train_df, plot_type="bar", show=False)
+    st.pyplot(fig_bar)
+
+    fig_bee = plt.figure(figsize=(8, 5))
+    shap.summary_plot(shap_values, X_train_df, show=False)
+    st.pyplot(fig_bee)
+
+ 
+
+    st.success("✅ Training, evaluation, and SHAP analysis completed.")
