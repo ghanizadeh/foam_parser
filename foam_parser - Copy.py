@@ -37,6 +37,68 @@ if uploaded_file is None:
 df = pd.read_csv(uploaded_file)
 st.success("Dataset loaded successfully")
 
+# ================================
+# Custom Ratio Generator Section
+# ================================
+with st.container(border=True):
+    st.subheader("⚗️ Optional: Create Custom Ratio Features (e.g., **APG/TDS**)")
+
+    numeric_columns = df.select_dtypes(include=['number']).columns.tolist()
+
+    st.markdown("Select numerators and denominators to automatically create ratio features:")
+
+    col1, col2 = st.columns(2)
+
+    numerators = col1.multiselect(
+        "Select Numerator Columns",
+        options=numeric_columns
+    )
+
+    denominators = col2.multiselect(
+        "Select Denominator Columns",
+        options=numeric_columns
+    )
+
+    ratio_warnings = []
+    new_ratio_cols = {}
+
+    if numerators and denominators:
+
+        for num in numerators:
+            for den in denominators:
+                ratio_name = f"{num}/{den}"
+
+                # Skip duplicates
+                if ratio_name in df.columns:
+                    continue
+
+                # Create ratio with NaN where denominator is zero
+                df[ratio_name] = df[num] / df[den].replace(0, np.nan)
+
+                # Count zeros
+                zero_count = (df[den] == 0).sum()
+
+                if zero_count > 0:
+                    ratio_warnings.append(
+                        f"⚠️ Ratio **{ratio_name}**: {zero_count} rows have denominator = 0 → filled with NaN."
+                    )
+
+                new_ratio_cols[ratio_name] = ratio_name
+
+        # Show created ratio names
+        if new_ratio_cols:
+            st.success(f"✅ Created {len(new_ratio_cols)} ratio features:")
+            st.write(list(new_ratio_cols.keys()))
+
+        # Show warnings
+        if ratio_warnings:
+            for warning in ratio_warnings:
+                st.warning(warning)
+
+    else:
+        st.info("Select at least one numerator and one denominator to generate ratio features.")
+
+df_original = df.copy()
 
 # ==========================================================
 # Feature / target selection
@@ -142,7 +204,8 @@ if st.button("🚀 Train & Optimize Random Forest"):
         test_size=test_size,
         random_state=42
     )
-
+    st.info(f"Size of Training data: {len(X_train)}")
+    st.info(f"Size of Test data: {len(X_test)}")
     best_model = None
     best_gap = np.inf
 
@@ -272,6 +335,108 @@ if st.button("🚀 Train & Optimize Random Forest"):
     shap.summary_plot(shap_values, X_train_df, show=False)
     st.pyplot(fig_bee)
 
- 
+    #dep_feature = st.selectbox("SHAP dependency feature", features)
+    #fig_dep = plt.figure(figsize=(6, 5))
+    #shap.dependence_plot(dep_feature, shap_values, X_train_df, show=False)
+    # st.pyplot(fig_dep)
 
     st.success("✅ Training, evaluation, and SHAP analysis completed.")
+
+    # ======================================================
+    # FINAL RESULTS
+    # ======================================================
+    st.divider()
+    st.header("📌 Final Results")
+
+    # ======================================================
+    # A) EVALUATION PREDICTION (ONLY LABELED DATA ~251)
+    # ======================================================
+    st.subheader("🧪 Evaluation Prediction (Measured Samples Only)")
+
+    df_eval = df_original.copy()
+    st.info(f"Original dataset size: {len(df_eval)} rows")
+    df_eval = df_eval[features + [target]].replace([np.inf, -np.inf], np.nan)
+    df_eval = df_eval.dropna(subset=features + [target])
+
+    df_eval = df_eval.reset_index(drop=True)
+
+    X_eval = df_eval[features].values
+
+    y_eval_pred = best_model.predict(X_eval)
+    if log_target:
+        y_eval_pred = 10 ** y_eval_pred
+
+    df_eval = df_eval.reset_index(drop=True)
+    df_eval["Predicted Permeability (md)"] = y_eval_pred
+
+    eval_display_cols = features + [
+        "Permeability (md)",
+        "Predicted Permeability (md)"
+    ]
+
+    
+
+    st.dataframe(
+        df_eval[eval_display_cols],
+        use_container_width=True
+    )
+    st.info(f"Evaluation samples: {len(df_eval)} rows")
+
+    eval_csv = df_eval.to_csv(index=False).encode("utf-8")
+
+    st.download_button(
+        label="⬇️ Download Evaluation Predictions (Measured Only)",
+        data=eval_csv,
+        file_name="permeability_evaluation_predictions.csv",
+        mime="text/csv"
+    )
+
+    '''
+    # ======================================================
+    # B) FINAL INFERENCE (ENTIRE DATASET)
+    # ======================================================
+    st.subheader("🌍 Final Inference (Entire Dataset)")
+
+    df_full = df_original.copy()
+    df_full_features = df_full[features].replace([np.inf, -np.inf], np.nan)
+    valid_mask = df_full_features.notna().all(axis=1)
+ 
+    df_infer = df_full.loc[valid_mask].copy()
+    df_infer = df_infer.reset_index(drop=True)
+
+    X_infer = df_infer[features].values
+
+    # Retrain on ALL labeled data (BEST PRACTICE)
+    best_model.fit(X, y)
+
+    y_infer_pred = best_model.predict(X_infer)
+    if log_target:
+        y_infer_pred = 10 ** y_infer_pred
+
+    df_infer["Measured Permeability (md)"] = (
+        df_infer[target] if target in df_infer.columns else np.nan
+    )
+    df_infer["Predicted Permeability (md)"] = y_infer_pred
+
+    infer_display_cols = (
+        features +
+        ["Measured Permeability (md)", "Predicted Permeability (md)"]
+    )
+    st.info(f"Inference samples: {len(df_infer)} rows")
+
+    st.dataframe(
+        df_infer[infer_display_cols],
+        use_container_width=True
+    )
+
+    infer_csv = df_infer.to_csv(index=False).encode("utf-8")
+
+    st.download_button(
+        label="⬇️ Download Full Dataset Predictions",
+        data=infer_csv,
+        file_name="permeability_full_inference.csv",
+        mime="text/csv"
+    )
+
+    st.success("✅ Evaluation and final inference completed successfully.")
+    '''
