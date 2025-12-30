@@ -352,44 +352,37 @@ if st.button("🚀 Train & Optimize Random Forest"):
     # A) EVALUATION PREDICTION (ONLY LABELED DATA ~251)
     # ======================================================
     st.subheader("🧪 Evaluation Prediction (Measured Samples Only)")
-
+    
     df_eval = df_original.copy()
-    st.info(f"Original dataset size: {len(df_eval)} rows")
+    
+    # Keep only rows with valid features + target
     df_eval = df_eval[features + [target]].replace([np.inf, -np.inf], np.nan)
     df_eval = df_eval.dropna(subset=features + [target])
-
+    
+    # CRITICAL: reset index to avoid alignment bugs
     df_eval = df_eval.reset_index(drop=True)
-
+    
     X_eval = df_eval[features].values
-
+    
     y_eval_pred = best_model.predict(X_eval)
     if log_target:
         y_eval_pred = 10 ** y_eval_pred
-
-    df_eval = df_eval.reset_index(drop=True)
+    
     df_eval["Predicted Permeability (md)"] = y_eval_pred
-
+    
+    # ✅ SAFE column list (no hard-coded target)
     eval_display_cols = features + [
-        "Permeability (md)",
+        target,
         "Predicted Permeability (md)"
     ]
-
     
-
+    st.info(f"Evaluation samples: {len(df_eval)} rows")
+    
     st.dataframe(
         df_eval[eval_display_cols],
         use_container_width=True
     )
-    st.info(f"Evaluation samples: {len(df_eval)} rows")
 
-    eval_csv = df_eval.to_csv(index=False).encode("utf-8")
-
-    st.download_button(
-        label="⬇️ Download Evaluation Predictions (Measured Only)",
-        data=eval_csv,
-        file_name="permeability_evaluation_predictions.csv",
-        mime="text/csv"
-    )
 
     '''
     # ======================================================
