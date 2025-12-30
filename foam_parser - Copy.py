@@ -341,12 +341,7 @@ if st.button("🚀 Train & Optimize Random Forest"):
     # st.pyplot(fig_dep)
 
     st.success("✅ Training, evaluation, and SHAP analysis completed.")
-
-    # ======================================================
-    # FINAL RESULTS
-    # ======================================================
-    st.divider()
-    st.header("📌 Final Results")
+ 
 
     # ======================================================
     # A) EVALUATION PREDICTION (ONLY LABELED DATA ~251)
