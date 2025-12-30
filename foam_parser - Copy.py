@@ -370,13 +370,10 @@ if st.button("🚀 Train & Optimize Random Forest"):
     df_eval["Predicted Permeability (md)"] = y_eval_pred
 
     eval_display_cols = features + [
-        "Permeability (md)",
+        target,
         "Predicted Permeability (md)"
     ]
-    missing = set(eval_display_cols) - set(df_eval.columns)
-    if missing:
-        st.error(f"Missing columns in evaluation table: {missing}")
-        st.stop()
+
     st.dataframe(
         df_eval[eval_display_cols],
         use_container_width=True
